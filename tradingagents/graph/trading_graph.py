@@ -32,6 +32,7 @@ from tradingagents.dataflows.config import set_config
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
+from tradingagents.llm_clients.openai_client import is_openai_compatible
 from tradingagents.reporting import write_report_tree
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -42,6 +43,20 @@ from .setup import GraphSetup
 from .signal_processing import SignalProcessor
 
 logger = logging.getLogger(__name__)
+
+# Per-provider, per-tier reasoning-effort defaults, applied only when the user
+# configured nothing for that tier.
+#
+# Ollama's quick tier is set to "none" because a local reasoning model spends
+# most of its wall time emitting reasoning tokens: measured on Qwen3 8B Q4_K_M,
+# the same prompt took 10.4s with thinking and 1.3s without, at an identical
+# ~40 tok/s — the cost is purely the extra tokens. The quick tier drives the
+# analyst turns and their tool loops, which are the bulk of a run's calls, so
+# this is the largest single lever on how long a run takes. The deep tier is
+# left alone so the debate and judging keep their reasoning.
+PROVIDER_TIER_EFFORT_DEFAULTS: dict[str, dict[str, str]] = {
+    "ollama": {"quick": "none"},
+}
 
 
 def _coerce_max_retries(value):
@@ -91,24 +106,28 @@ class TradingAgentsGraph:
         os.makedirs(self.config["data_cache_dir"], exist_ok=True)
         os.makedirs(self.config["results_dir"], exist_ok=True)
 
-        # Initialize LLMs with provider-specific thinking configuration
-        llm_kwargs = self._get_provider_kwargs()
+        # Initialize LLMs with provider-specific thinking configuration. The two
+        # tiers are configured separately so the quick tier can skip reasoning
+        # while the deep tier keeps it (see _reasoning_effort_for).
+        deep_kwargs = self._get_provider_kwargs("deep")
+        quick_kwargs = self._get_provider_kwargs("quick")
 
         # Add callbacks to kwargs if provided (passed to LLM constructor)
         if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
+            deep_kwargs["callbacks"] = self.callbacks
+            quick_kwargs["callbacks"] = self.callbacks
 
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["deep_think_llm"],
             base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+            **deep_kwargs,
         )
         quick_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["quick_think_llm"],
             base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+            **quick_kwargs,
         )
 
         self.deep_thinking_llm = deep_client.get_llm()
@@ -150,8 +169,43 @@ class TradingAgentsGraph:
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
-    def _get_provider_kwargs(self) -> dict[str, Any]:
-        """Get provider-specific kwargs for LLM client creation."""
+    def _reasoning_effort_for(self, provider: str, tier: str | None) -> str | None:
+        """Resolve ``reasoning_effort`` for one LLM tier ("deep" or "quick").
+
+        Precedence: the per-tier config key, then the shared provider key, then
+        a provider default. Only the OpenAI-compatible family takes this
+        parameter — Google and Anthropic have their own knobs, whose vocabulary
+        ("minimal", "high") does not carry over.
+
+        ``tier`` is None when a caller wants the tier-independent kwargs, which
+        keeps the pre-existing single-kwargs behavior intact.
+        """
+        if not is_openai_compatible(provider):
+            return None
+
+        if tier:
+            configured = self.config.get(f"{tier}_reasoning_effort")
+            if configured:
+                return configured
+
+        # The shared key stays scoped to native OpenAI, as its name implies:
+        # widening it would start forwarding the parameter to third-party
+        # endpoints that previously ignored it, which can 400 a working setup.
+        if provider == "openai":
+            shared = self.config.get("openai_reasoning_effort")
+            if shared:
+                return shared
+
+        if tier:
+            return PROVIDER_TIER_EFFORT_DEFAULTS.get(provider, {}).get(tier)
+        return None
+
+    def _get_provider_kwargs(self, tier: str | None = None) -> dict[str, Any]:
+        """Get provider-specific kwargs for LLM client creation.
+
+        ``tier`` selects per-tier reasoning configuration; omit it for the
+        settings both tiers share.
+        """
         kwargs = {}
         provider = self.config.get("llm_provider", "").lower()
 
@@ -160,15 +214,14 @@ class TradingAgentsGraph:
             if thinking_level:
                 kwargs["thinking_level"] = thinking_level
 
-        elif provider == "openai":
-            reasoning_effort = self.config.get("openai_reasoning_effort")
-            if reasoning_effort:
-                kwargs["reasoning_effort"] = reasoning_effort
-
         elif provider == "anthropic":
             effort = self.config.get("anthropic_effort")
             if effort:
                 kwargs["effort"] = effort
+
+        reasoning_effort = self._reasoning_effort_for(provider, tier)
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         # Sampling temperature is cross-provider: forward it whenever set.
         # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env

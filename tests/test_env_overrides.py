@@ -8,6 +8,12 @@ import pytest
 
 import tradingagents.default_config as default_config_module
 
+# The shipped defaults. Kept here rather than inline so changing what the
+# project ships out of the box touches one place instead of every assertion.
+BUILTIN_PROVIDER = "ollama"
+BUILTIN_DEEP_MODEL = "Qwen3:latest"
+BUILTIN_QUICK_MODEL = "Qwen3:latest"
+
 
 def _reload_with_env(monkeypatch, **overrides):
     """Set/clear env vars then reload default_config to re-evaluate DEFAULT_CONFIG."""
@@ -20,9 +26,9 @@ def _reload_with_env(monkeypatch, **overrides):
 
 def test_no_env_uses_built_in_defaults(monkeypatch):
     dc = _reload_with_env(monkeypatch)
-    assert dc.DEFAULT_CONFIG["llm_provider"] == "openai"
-    assert dc.DEFAULT_CONFIG["deep_think_llm"] == "gpt-5.5"
-    assert dc.DEFAULT_CONFIG["quick_think_llm"] == "gpt-5.4-mini"
+    assert dc.DEFAULT_CONFIG["llm_provider"] == BUILTIN_PROVIDER
+    assert dc.DEFAULT_CONFIG["deep_think_llm"] == BUILTIN_DEEP_MODEL
+    assert dc.DEFAULT_CONFIG["quick_think_llm"] == BUILTIN_QUICK_MODEL
     assert dc.DEFAULT_CONFIG["backend_url"] is None
     assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
     assert dc.DEFAULT_CONFIG["checkpoint_enabled"] is False
@@ -96,7 +102,7 @@ def test_empty_env_value_is_passthrough(monkeypatch):
         TRADINGAGENTS_LLM_PROVIDER="",
         TRADINGAGENTS_MAX_DEBATE_ROUNDS="",
     )
-    assert dc.DEFAULT_CONFIG["llm_provider"] == "openai"
+    assert dc.DEFAULT_CONFIG["llm_provider"] == BUILTIN_PROVIDER
     assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
 
 

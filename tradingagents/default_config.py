@@ -25,6 +25,12 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
+    # Per-tier reasoning effort for the OpenAI-compatible provider family.
+    # The deep tier reasons; the quick tier drives the high-volume analyst
+    # turns, so skipping its reasoning is the largest single lever on the
+    # wall-clock cost of a run.
+    "TRADINGAGENTS_DEEP_REASONING_EFFORT":   "deep_reasoning_effort",
+    "TRADINGAGENTS_QUICK_REASONING_EFFORT":  "quick_reasoning_effort",
 }
 
 
@@ -78,9 +84,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
     # LLM settings
-    "llm_provider": "openai",
-    "deep_think_llm": "gpt-5.5",
-    "quick_think_llm": "gpt-5.4-mini",
+    "llm_provider": "ollama",
+    "deep_think_llm": "Qwen3:latest",
+    "quick_think_llm": "Qwen3:latest",
     # When None, each provider's client falls back to its own default endpoint
     # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
     # The CLI overrides this per provider when the user picks one. Keeping a
@@ -91,6 +97,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
+    # Per-tier reasoning effort, OpenAI-compatible providers only (Google and
+    # Anthropic keep their own keys above). When None, the tier falls back to
+    # the shared key and then to a provider default — see
+    # ``PROVIDER_TIER_EFFORT_DEFAULTS`` in graph/trading_graph.py, which turns
+    # the Ollama quick tier's thinking off because local reasoning tokens
+    # dominate run time without improving the analyst turns that use it.
+    "deep_reasoning_effort": None,      # e.g. "high"; None = provider default
+    "quick_reasoning_effort": None,     # e.g. "none" to skip thinking entirely
     # Sampling temperature, forwarded to every provider when set. None leaves
     # each provider at its own default. Lower values reduce run-to-run
     # variation on models that honor it; reasoning models largely ignore it

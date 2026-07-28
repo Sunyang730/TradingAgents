@@ -204,6 +204,11 @@ class ProviderSpec:
     placeholder_key: str = "EMPTY"            # sent when no key is available (keyless local servers)
     require_base_url: bool = False            # error if no base_url is resolved (generic endpoint)
     use_responses_api: bool = False           # native OpenAI Responses API
+    # Whether ``reasoning_effort`` is filtered by the OpenAI model-name gate
+    # below. False for servers that host arbitrary models, where the gate's
+    # gpt-5/o-series regex is meaningless and would silently drop a parameter
+    # the endpoint actually honors.
+    gate_reasoning_effort: bool = True
 
 
 # Single source of truth for the OpenAI-compatible provider family. Dual-region
@@ -225,10 +230,12 @@ OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
     "groq":       ProviderSpec(base_url="https://api.groq.com/openai/v1"),
     "nvidia":     ProviderSpec(base_url="https://integrate.api.nvidia.com/v1"),
     "ollama":     ProviderSpec(base_url="http://localhost:11434/v1", base_url_env="OLLAMA_BASE_URL",
-                               key_optional=True, placeholder_key="ollama"),
+                               key_optional=True, placeholder_key="ollama",
+                               gate_reasoning_effort=False),
     # Generic endpoint: user supplies base_url; key optional (keyless local).
     "openai_compatible": ProviderSpec(
-        require_base_url=True, key_optional=True, chat_class=LocalCompatibleChatOpenAI
+        require_base_url=True, key_optional=True, chat_class=LocalCompatibleChatOpenAI,
+        gate_reasoning_effort=False,
     ),
 }
 
@@ -321,11 +328,14 @@ class OpenAIClient(BaseLLMClient):
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
-        # Forward user-provided kwargs
+        # Forward user-provided kwargs. The reasoning_effort gate is a native
+        # OpenAI concern: providers that host arbitrary models opt out via the
+        # spec, since the model name says nothing about parameter support there.
+        gate_effort = spec.gate_reasoning_effort if spec is not None else True
         for key in _PASSTHROUGH_KWARGS:
             if key not in self.kwargs:
                 continue
-            if key == "reasoning_effort" and not _supports_reasoning_effort(self.model):
+            if key == "reasoning_effort" and gate_effort and not _supports_reasoning_effort(self.model):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 

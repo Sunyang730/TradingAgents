@@ -1,7 +1,14 @@
 # Plan: Congressional-disclosure stock pipeline (`pull-stocks` / `stocks-review`)
 
-**Status:** agreed 2026-07-28, not yet implemented
+**Status:** commit 1 landed; commits 2–4 outstanding
 **Resume phrase:** *"Resume the congressional stock pipeline plan in `docs/plans/congressional-stock-pipeline.md`."*
+
+| Commit | State |
+| --- | --- |
+| 1 — per-tier reasoning effort | **done** |
+| 2 — `pull-stocks` | not started |
+| 3 — `stocks-review` | not started |
+| 4 — Markdown → HTML rendering | not started |
 
 Two new CLI commands. `pull-stocks` builds a ranked, provenance-carrying candidate
 list from US House financial disclosures and industry peers. `stocks-review` runs the
@@ -59,6 +66,10 @@ Changes:
 
 The quick tier drives the four analysts and their tool loops, so this is the largest
 lever on batch runtime. Benefits plain `analyze` too.
+
+**Landed.** Measured end-to-end through `create_llm_client` against the local Ollama
+server on identical input: deep tier 10.76 s / 292 output tokens, quick tier
+**1.33 s / 45 output tokens**. Full suite 593 passed, ruff clean.
 
 ## Commit 2 — `pull-stocks`
 
