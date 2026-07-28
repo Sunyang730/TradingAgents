@@ -114,6 +114,14 @@ Install the package and its dependencies:
 pip install .
 ```
 
+If you plan to change the code, install it editable instead:
+```bash
+pip install -e .
+```
+`pip install .` copies the project into `site-packages`, so the `tradingagents`
+command keeps running that snapshot and will not see your edits — including any
+newly added subcommand. `-e` links it to your working tree instead.
+
 ### Docker
 
 Alternatively, run with Docker:
@@ -168,6 +176,54 @@ tradingagents          # installed command
 python -m cli.main     # alternative: run directly from source
 ```
 You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
+
+### Finding tickers: `pull-stocks`
+
+If you would rather not pick tickers yourself, `pull-stocks` builds a ranked
+candidate list from public congressional trade disclosures:
+
+```bash
+tradingagents pull-stocks                      # last 90 days, 5 peers per ticker
+tradingagents pull-stocks --days 45 --peers 3
+tradingagents pull-stocks --thesis-limit 0     # ranked list only, no LLM calls
+```
+
+It reads US House **Periodic Transaction Reports** — the filings members of
+Congress must submit under the STOCK Act — keeps the disclosed *purchases*,
+then expands each into industry peers via Yahoo's sector/industry groupings.
+No API key is needed for any of it.
+
+Results land in `./picks/<timestamp>/`:
+
+- **`seeds.json`** — every candidate, ranked, with full provenance: who traded
+  it, when, the disclosed amount bracket, the account it was held through, and
+  a link to the source PDF.
+- **`selection.html`** — the same list as a browsable page.
+
+Ranking is lexicographic, so a ticker's position is always explainable in one
+sentence: how many *distinct members* bought it, then the largest disclosed
+amount bracket, then how recently it was disclosed. Peers rank below every
+disclosed ticker — something a member actually bought outranks something we
+merely inferred is similar.
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `--days` | `90` | How far back to look over disclosure dates |
+| `--min-amount` | `15001` | Skip brackets starting below this (the smallest House bracket is $1,001–$15,000) |
+| `--peers` | `5` | Industry/sector peers added per disclosed ticker; `0` disables |
+| `--thesis-limit` | `25` | How many top candidates get a news-grounded thesis; `0` skips all LLM calls |
+| `--output` | `.` | Directory to create `picks/` under |
+
+Two things worth knowing about the output:
+
+- **A thesis is an inference, never a disclosure.** These filings record *what*
+  was traded and *when*, and nothing about why. The thesis is written from
+  public news between the trade date and today, and it is not a claim about any
+  member's reasoning. Where no news is found, the page says so rather than
+  speculating.
+- **A minority of filings are scanned paper** and yield no extractable text
+  (around 9% in practice). Those are counted and listed with links rather than
+  silently skipped, so the page never overstates its own coverage.
 
 ### Markets and tickers
 

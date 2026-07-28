@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [Unreleased]
+
+### Added
+
+- **`pull-stocks` builds a candidate list from congressional disclosures.**
+  Reads US House Periodic Transaction Reports, keeps disclosed purchases,
+  expands each into industry peers via Yahoo's sector/industry groupings, and
+  writes `./picks/<timestamp>/seeds.json` plus a browsable `selection.html`.
+  Keyless end to end. Ranking is lexicographic — distinct-member count, then
+  largest disclosed bracket, then recency, with peers below every disclosed
+  ticker — so a ticker's position is explainable in one sentence rather than
+  produced by invented weights. Filings that are scanned paper rather than
+  electronic submissions yield no text; those are reported and linked rather
+  than silently skipped, so a pull cannot overstate its coverage. A candidate's
+  thesis is an inference from public news between the trade date and today,
+  never a claim about a member's reasoning — the forms record none.
+- **Per-tier reasoning effort** via `TRADINGAGENTS_DEEP_REASONING_EFFORT` and
+  `TRADINGAGENTS_QUICK_REASONING_EFFORT`, for the OpenAI-compatible provider
+  family including Ollama and local endpoints. The quick tier drives the
+  analysts and their tool loops, so skipping its reasoning is the largest lever
+  on run time; the deep tier keeps reasoning for the debate and judging. Ollama
+  defaults its quick tier to `none` — measured on Qwen3 8B Q4_K_M, the same
+  prompt took 10.4 s with thinking and 1.3 s without, at identical throughput.
+
+### Fixed
+
+- **`reasoning_effort` reached Ollama and other local endpoints.** It was
+  filtered by a `gpt-5`/o-series model-name gate that is a native-OpenAI
+  concern, so the parameter was silently dropped for servers hosting arbitrary
+  models rather than sent to endpoints that honor it.
+- **A bare `tradingagents` still runs `analyze`.** `analyze` had been the only
+  command; adding a sibling would otherwise have turned the no-argument
+  invocation into a usage error.
+
 ## [0.3.1] — 2026-07-05
 
 Correctness and stability patch: data look-ahead, graph-router crash-safety,
