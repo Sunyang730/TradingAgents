@@ -6,7 +6,7 @@
 | Commit | State |
 | --- | --- |
 | 1 — per-tier reasoning effort | **done** |
-| 2 — `pull-stocks` | not started |
+| 2 — `pull-stocks` | **done** |
 | 3 — `stocks-review` | not started |
 | 4 — Markdown → HTML rendering | not started |
 
@@ -25,7 +25,11 @@ These were measured on 2026-07-28, not assumed. Re-check before trusting.
 | House index is fetchable, unauthenticated | `GET disclosures-clerk.house.gov/public_disc/financial-pdfs/2026FD.zip` → 200, 52 700 bytes |
 | Index is tab-delimited | Columns: `Prefix, Last, First, Suffix, FilingType, StateDst, Year, FilingDate, DocID` |
 | PTRs are `FilingType == "P"` | 320 of 1436 rows for 2026 YTD (~45/month) |
-| PTR PDFs are text, not scans | 15–17 embedded font objects, one DCTDecode letterhead image → **no OCR needed** |
+| Electronic PTRs are text, not scans | 15–17 embedded font objects, one DCTDecode letterhead image |
+| **But a minority are scanned paper** | Corrected 2026-07-28: doc IDs in the `91xxxxx` range extract **zero characters**. 6 of 65 filings (9%) in a live 45-day pull. These are recorded as `UnreadableFiling` rather than dropped — no OCR, but no silent loss either |
+| Extracted headers contain NUL bytes | `FILING STATUS` extracts as `F\x00\x00\x00\x00\x00 S\x00\x00\x00\x00\x00:` — they are **not** spaces. Text must be normalised before matching, or `SUBHOLDING OF` never matches |
+| The index is CRLF-terminated | Unstripped `\r` corrupts the DocID that addresses the PDF |
+| Tickers wrap away from their tag | `(AAPL)` can end one line with `[ST]` opening the next; requiring the pair adjacent silently drops real rows |
 | Ticker is in the PDF text | `Amazon.com, Inc. - Common Stock (AMZN) [ST]` → regex, not an LLM job |
 | PTRs contain **no rationale** | Only free-text field is `DESCRIPTION`, a mechanical share/price dump |
 | Blind trusts are common | `SUBHOLDING OF: Putnam Investments` — member never chose the trade |
@@ -120,6 +124,16 @@ ticker ranked where it did):
 **Writes** — `./picks/{YYYYMMDD_HHMMSS}/`
 - `seeds.json` — immutable, **all** ranked candidates with full provenance
 - `selection.html` — why each was selected, which filing, live link to the source PDF
+
+**Landed.** Live 45-day pull: 65 filings read in ~8 s, 12 purchases kept, 10 disclosed
+tickers, 20 peers, 6 unreadable scans reported. Peer expansion resolved sensible
+comparables (LLY→JNJ/ABBV, MTN→LVS/MGM, CRM→NOW/ADP). `selection.html` is 22 KB with
+zero scripts and zero runtime fetches. 45 unit tests; full suite 638 passed, ruff clean.
+
+One regression caught and fixed while landing this: `analyze` used to be the only
+command, so a bare `tradingagents` ran it. A second command made Typer demand an
+explicit subcommand (exit 2), so an `invoke_without_command` callback now preserves the
+old behaviour.
 
 ## Commit 3 — `stocks-review`
 

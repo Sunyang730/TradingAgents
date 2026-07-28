@@ -69,7 +69,20 @@ app = typer.Typer(
     name="TradingAgents",
     help="TradingAgents CLI: Multi-Agents LLM Financial Trading Framework",
     add_completion=True,  # Enable shell completion
+    invoke_without_command=True,
 )
+
+
+@app.callback()
+def _default(ctx: typer.Context):
+    """Run ``analyze`` when invoked with no subcommand.
+
+    ``analyze`` was the only command for a long time, so a bare
+    ``tradingagents`` ran it. Adding sibling commands would otherwise turn that
+    into a usage error for everyone with the old habit or an existing script.
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(analyze)
 
 
 # Create a deque to store recent messages with a maximum length
@@ -1311,6 +1324,91 @@ def analyze(
             err=True,
         )
         raise typer.Exit(code=1) from None
+
+
+@app.command("pull-stocks")
+def pull_stocks_command(
+    days: int = typer.Option(
+        90, "--days", help="Look back this many days over disclosure dates."
+    ),
+    min_amount: int = typer.Option(
+        15001,
+        "--min-amount",
+        help="Skip transactions whose disclosed bracket starts below this. The "
+        "smallest House bracket is $1,001-$15,000, so the default keeps "
+        "everything above that tier.",
+    ),
+    peers: int = typer.Option(
+        5, "--peers", help="Industry/sector peers to add per disclosed ticker. 0 disables."
+    ),
+    thesis_limit: int = typer.Option(
+        25,
+        "--thesis-limit",
+        help="Write a news-grounded thesis for this many top-ranked candidates. "
+        "0 skips thesis generation entirely (no LLM calls).",
+    ),
+    output: str = typer.Option(
+        ".", "--output", help="Directory to create ./picks/<timestamp>/ under."
+    ),
+):
+    """Build a ranked stock list from congressional trade disclosures.
+
+    Reads US House Periodic Transaction Reports, keeps disclosed purchases,
+    expands each into industry peers, ranks the result, and writes seeds.json
+    plus a browsable selection.html.
+    """
+    from datetime import date
+
+    from tradingagents.disclosures import (
+        HouseDisclosureSource,
+        PullOptions,
+        pull_stocks,
+        write_pull,
+    )
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+    from tradingagents.llm_clients import create_llm_client
+
+    options = PullOptions(
+        days=days,
+        min_amount=min_amount,
+        peers=peers,
+        thesis_limit=thesis_limit,
+        as_of=date.today(),
+    )
+
+    llm = None
+    if thesis_limit > 0:
+        # The thesis is a short summarisation task, so it runs on the quick
+        # tier — the same client the analysts use.
+        kwargs_owner = object.__new__(TradingAgentsGraph)
+        kwargs_owner.config = DEFAULT_CONFIG
+        llm = create_llm_client(
+            provider=DEFAULT_CONFIG["llm_provider"],
+            model=DEFAULT_CONFIG["quick_think_llm"],
+            base_url=DEFAULT_CONFIG.get("backend_url"),
+            **kwargs_owner._get_provider_kwargs("quick"),
+        ).get_llm()
+
+    source = HouseDisclosureSource(cache_dir=DEFAULT_CONFIG["data_cache_dir"])
+
+    with console.status("[bold green]Reading House disclosures...", spinner="dots"):
+        result = pull_stocks(source, llm=llm, options=options)
+
+    pick_dir = write_pull(result, root=output)
+
+    console.print()
+    console.print(f"  Filings read        [bold]{result.filings_seen}[/bold]")
+    console.print(f"  Purchases kept      [bold]{result.transactions_selected}[/bold]")
+    console.print(f"  Disclosed tickers   [bold]{len(result.seeds)}[/bold]")
+    console.print(f"  Peers added         [bold]{len(result.peer_candidates)}[/bold]")
+    if result.unreadable:
+        console.print(
+            f"  [yellow]Unreadable filings  {len(result.unreadable)}[/yellow] "
+            "(scanned paper; listed in the report)"
+        )
+    console.print()
+    console.print(f"  [green]{pick_dir / 'seeds.json'}[/green]")
+    console.print(f"  [green]{pick_dir / 'selection.html'}[/green]")
 
 
 if __name__ == "__main__":
