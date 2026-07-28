@@ -6,8 +6,11 @@ CLI and ``TradingAgentsGraph.save_reports`` both call this, so a headless / API
 run produces the same on-disk report tree a CLI run does.
 """
 
+import logging
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
@@ -97,5 +100,20 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
 
     # Write consolidated report
     header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
+    document = header + "\n\n".join(sections)
+    (save_path / "complete_report.md").write_text(document, encoding="utf-8")
+
+    # A readable companion to the markdown. Written here rather than by the
+    # batch runner so a plain single-ticker run gets one too. Failure to render
+    # must not lose a completed analysis, so the markdown stays authoritative.
+    try:
+        from .report_html import render_report_html
+
+        (save_path / "complete_report.html").write_text(
+            render_report_html(document, f"Trading Analysis Report: {ticker}"),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 - the report itself is already safely on disk
+        logger.warning("Could not render %s HTML report", ticker, exc_info=True)
+
     return save_path / "complete_report.md"

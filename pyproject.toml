@@ -17,6 +17,8 @@ dependencies = [
     "langchain-openai>=0.3.23",
     "langgraph>=0.4.8",
     "langgraph-checkpoint-sqlite>=2.0.0",
+    # Renders the consolidated report as a browsable HTML companion.
+    "markdown>=3.6",
     "pandas>=2.3.0",
     "parsel>=1.10.0",
     # House disclosure PTRs are published only as PDFs; pure-Python extraction.
