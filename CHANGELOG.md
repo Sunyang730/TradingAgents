@@ -22,6 +22,21 @@ Breaking changes within the 0.x line are called out explicitly.
   than silently skipped, so a pull cannot overstate its coverage. A candidate's
   thesis is an inference from public news between the trade date and today,
   never a claim about a member's reasoning — the forms record none.
+- **`stocks-review` runs the agents over a pull's candidates.** Non-interactive
+  so a long batch runs unattended, sequential by default, and durable: progress
+  is flushed to `review_state.json` after every ticker, so an interrupted run
+  resumes where it stopped and a failed ticker is recorded and skipped rather
+  than ending the batch. `--retry-failed` re-runs only failures; `--skip-days`
+  avoids re-deciding the same names within a week without blocking the
+  reflection loop that repeat runs feed. State is written beside `seeds.json`,
+  never into it, so the record of what was disclosed stays immutable. Produces
+  `summary.html`: one row per ticker with its five-tier decision, why it was
+  selected, the source filing, and a link to the full report.
+- **An HTML companion beside every markdown report.** `complete_report.html` is
+  written next to `complete_report.md` for every run, including plain `analyze`.
+  Converted at write time with inline CSS, because these pages are opened over
+  `file://` where a browser blocks `fetch()` of local files as cross-origin — a
+  client-side renderer or CDN stylesheet would fail silently there.
 - **Per-tier reasoning effort** via `TRADINGAGENTS_DEEP_REASONING_EFFORT` and
   `TRADINGAGENTS_QUICK_REASONING_EFFORT`, for the OpenAI-compatible provider
   family including Ollama and local endpoints. The quick tier drives the

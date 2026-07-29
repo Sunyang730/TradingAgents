@@ -117,6 +117,122 @@ def _card(candidate) -> str:
     )
 
 
+_DECISION_CLASS = {
+    "buy": "buy", "overweight": "buy",
+    "hold": "hold",
+    "underweight": "sell", "sell": "sell",
+}
+
+_SUMMARY_CSS = _CSS + """
+.dec { font-weight:650; padding:.12rem .5rem; border-radius:99px; font-size:.82rem;
+  border:1px solid var(--line); white-space:nowrap; }
+.dec.buy { color:#1a7f37; border-color:#1a7f37; }
+.dec.sell { color:#b42318; border-color:#b42318; }
+.dec.hold { color:var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .dec.buy { color:#5fd07d; border-color:#3a7d4c; }
+  .dec.sell { color:#ff8a7a; border-color:#a4453a; }
+}
+tr.failed td { color:var(--muted); }
+.err { font-size:.82rem; color:#b42318; }
+@media (prefers-color-scheme: dark) { .err { color:#ff8a7a; } }
+"""
+
+
+def render_summary_html(state, candidates: list[dict], pick_dir) -> str:
+    """Render the batch summary: one row per ticker, linking to its full report."""
+    from pathlib import Path
+
+    from .review import STATUS_FAILED, STATUS_OK, STATUS_SKIPPED, relative_link
+
+    pick_dir = Path(pick_dir)
+    by_ticker = {c["ticker"]: c for c in candidates}
+    results = state.data["results"]
+    model = state.data.get("model", {})
+
+    def sort_key(item):
+        ticker, entry = item
+        order = {STATUS_OK: 0, STATUS_FAILED: 1, STATUS_SKIPPED: 2}
+        return (order.get(entry.get("status"), 3), entry.get("rank") or 10**6, ticker)
+
+    rows = []
+    for ticker, entry in sorted(results.items(), key=sort_key):
+        candidate = by_ticker.get(ticker, {})
+        status = entry.get("status")
+        origin = candidate.get("origin", "")
+        members = ", ".join(candidate.get("members") or []) or "—"
+
+        if status == STATUS_OK:
+            decision = entry.get("decision") or "—"
+            css = _DECISION_CLASS.get(str(decision).lower(), "hold")
+            verdict = f'<span class="dec {css}">{escape(str(decision))}</span>'
+            href = relative_link(entry.get("report_html", ""), pick_dir)
+            report = f'<a href="{escape(href)}">full report</a>'
+        elif status == STATUS_FAILED:
+            verdict = '<span class="dec">failed</span>'
+            report = f'<span class="err">{escape(entry.get("error", ""))[:120]}</span>'
+        else:
+            verdict = '<span class="dec">skipped</span>'
+            report = f'<span class="rank">{escape(entry.get("reason", ""))}</span>'
+
+        thesis = candidate.get("thesis")
+        thesis_cell = (
+            escape(thesis) if thesis and thesis != NO_INFORMATION
+            else '<span class="rank">—</span>'
+        )
+        filing = ""
+        for txn in candidate.get("transactions") or []:
+            filing = (
+                f'<a href="{escape(txn["source_url"])}" rel="noreferrer">'
+                f'#{escape(txn["doc_id"])}</a>'
+            )
+            break
+
+        rows.append(
+            f'<tr class="{escape(status or "")}">'
+            f'<td class="num">{candidate.get("rank") or "—"}</td>'
+            f"<td><b>{escape(ticker)}</b></td>"
+            f"<td>{verdict}</td>"
+            f'<td>{escape(origin)}</td>'
+            f"<td>{escape(members)}</td>"
+            f"<td>{thesis_cell}</td>"
+            f"<td>{filing or '—'}</td>"
+            f"<td>{report}</td>"
+            "</tr>"
+        )
+
+    counts = {s: sum(1 for e in results.values() if e.get("status") == s)
+              for s in (STATUS_OK, STATUS_FAILED, STATUS_SKIPPED)}
+    selection = relative_link(pick_dir / "selection.html", pick_dir)
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Review summary — {escape(pick_dir.name)}</title>
+<style>{_SUMMARY_CSS}</style></head><body><main>
+<h1>Review summary</h1>
+<p class="sub">Pick {escape(pick_dir.name)} ·
+model {escape(str(model.get("provider")))} /
+{escape(str(model.get("deep_think_llm")))} ·
+{escape(str(model.get("quick_think_llm")))} ·
+updated {escape(str(state.data.get("updated_at") or ""))} ·
+<a href="{escape(selection)}">selection page</a></p>
+<div class="stats">
+  <div><b>{counts[STATUS_OK]}</b> analysed</div>
+  <div><b>{counts[STATUS_FAILED]}</b> failed</div>
+  <div><b>{counts[STATUS_SKIPPED]}</b> skipped</div>
+</div>
+<div class="wrap"><table><thead><tr>
+<th>#</th><th>Ticker</th><th>Decision</th><th>Origin</th><th>Disclosed by</th>
+<th>Why selected</th><th>Filing</th><th>Report</th>
+</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
+<footer>Decisions are the Portfolio Manager's five-tier rating (Buy, Overweight,
+Hold, Underweight, Sell) from a full multi-agent run. "Why selected" is an
+inference from public news at pull time, not a member's stated reasoning — the
+disclosure forms record none. Nothing here is investment advice.</footer>
+</main></body></html>"""
+
+
 def render_selection_html(result) -> str:
     """Render the candidate list produced by a pull."""
     window_start = (

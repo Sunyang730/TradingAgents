@@ -225,6 +225,46 @@ Two things worth knowing about the output:
   (around 9% in practice). Those are counted and listed with links rather than
   silently skipped, so the page never overstates its own coverage.
 
+### Analyzing the list: `stocks-review`
+
+`stocks-review` runs the full multi-agent pipeline over a pull's candidates,
+one ticker at a time:
+
+```bash
+tradingagents stocks-review                        # newest pull, top 25
+tradingagents stocks-review --max-symbols 5
+tradingagents stocks-review --retry-failed         # re-run only what failed
+```
+
+It is non-interactive, because a batch is long — budget roughly 10-15 minutes
+per ticker on a local model, so a full cap is an overnight job. Progress is
+written to `review_state.json` after **every** ticker, so an interrupted batch
+resumes where it stopped, and a ticker that fails is recorded and skipped
+rather than ending the run.
+
+When it finishes you get `summary.html` in the same pick directory: one row per
+ticker with its five-tier decision (Buy / Overweight / Hold / Underweight /
+Sell), why it was selected, a link to the source filing, and a link through to
+that ticker's full report.
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `--pick` | newest | Which pick directory to review |
+| `--max-symbols` | `25` | Analyze at most this many, best-ranked first |
+| `--concurrency` | `1` | Tickers at once; local servers serialize on the GPU anyway |
+| `--skip-days` | `7` | Skip a ticker analyzed more recently than this |
+| `--force` | off | Re-analyze even recently analyzed tickers |
+| `--retry-failed` | off | Re-run only previous failures |
+| `--asset-classes` | `ST,ET,CT` | Disclosure asset codes to analyze |
+| `--date` | today | Analysis date |
+| `--provider` / `--deep-model` / `--quick-model` | from config | Override the LLM for this batch |
+
+The resolved provider and models are recorded in `review_state.json`, so a
+batch's decisions stay comparable even after your config changes.
+
+`seeds.json` is never modified — the record of what was disclosed stays
+separate from the record of what was run.
+
 ### Markets and tickers
 
 TradingAgents works with any market Yahoo Finance covers, using the exchange-suffixed ticker. Company identity and the alpha benchmark resolve automatically per market.

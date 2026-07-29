@@ -1,14 +1,14 @@
 # Plan: Congressional-disclosure stock pipeline (`pull-stocks` / `stocks-review`)
 
-**Status:** commit 1 landed; commits 2–4 outstanding
+**Status:** all four commits landed
 **Resume phrase:** *"Resume the congressional stock pipeline plan in `docs/plans/congressional-stock-pipeline.md`."*
 
 | Commit | State |
 | --- | --- |
 | 1 — per-tier reasoning effort | **done** |
 | 2 — `pull-stocks` | **done** |
-| 3 — `stocks-review` | not started |
-| 4 — Markdown → HTML rendering | not started |
+| 3 — `stocks-review` | **done** |
+| 4 — Markdown → HTML rendering | **done** (landed before 3, which links to its output) |
 
 Two new CLI commands. `pull-stocks` builds a ranked, provenance-carrying candidate
 list from US House financial disclosures and industry peers. `stocks-review` runs the
@@ -157,6 +157,12 @@ Non-interactive (an overnight batch must not block on a prompt). Reads the newes
 - Writes `review_state.json` (per-ticker status, report path, decision) beside — never
   inside — `seeds.json`, keeping provenance immutable.
 - Then `summary.html`: decision, score, filing reference, link to the rendered report.
+
+**Landed.** Live two-ticker batch against the real graph on local Qwen3: SPCX → Hold
+(607 s), LLY → Overweight (725 s) — so the ~15 min/ticker estimate holds, call it
+10-12 min with the commit-1 thinking split. State flushed after each ticker and
+verified durable mid-batch. Every link on `summary.html` resolves: the selection page,
+both rendered reports, and the source filing PDFs. 24 unit tests.
 
 ## Commit 4 — Markdown → HTML rendering
 

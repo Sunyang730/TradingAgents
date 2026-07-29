@@ -1411,5 +1411,129 @@ def pull_stocks_command(
     console.print(f"  [green]{pick_dir / 'selection.html'}[/green]")
 
 
+@app.command("stocks-review")
+def stocks_review_command(
+    pick: str = typer.Option(
+        None, "--pick", help="Pick directory to review. Defaults to the newest under ./picks/."
+    ),
+    max_symbols: int = typer.Option(
+        25, "--max-symbols", help="Analyze at most this many candidates, best-ranked first."
+    ),
+    concurrency: int = typer.Option(
+        1,
+        "--concurrency",
+        help="Tickers to analyze at once. Local model servers generally serialize "
+        "on the GPU regardless, so raising this mainly helps against hosted providers.",
+    ),
+    skip_days: int = typer.Option(
+        7, "--skip-days", help="Skip a ticker whose newest report is younger than this."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-analyze even recently analyzed tickers."
+    ),
+    retry_failed: bool = typer.Option(
+        False, "--retry-failed", help="Re-run only the tickers that failed previously."
+    ),
+    asset_classes: str = typer.Option(
+        "ST,ET,CT",
+        "--asset-classes",
+        help="Disclosure asset-type codes to analyze. Options (OP), mutual funds "
+        "(MF) and government securities (GS) are excluded by default: they name "
+        "contracts or have no resolvable ticker.",
+    ),
+    analysis_date: str = typer.Option(
+        None, "--date", help="Analysis date (YYYY-MM-DD). Defaults to today."
+    ),
+    provider: str = typer.Option(None, "--provider", help="Override the LLM provider."),
+    deep_model: str = typer.Option(None, "--deep-model", help="Override the deep-think model."),
+    quick_model: str = typer.Option(None, "--quick-model", help="Override the quick-think model."),
+):
+    """Run the trading agents over a pull-stocks candidate list, one at a time.
+
+    Non-interactive by design so a long batch can run unattended. A ticker that
+    fails is recorded and skipped rather than ending the run, and progress is
+    written after every ticker, so an interrupted batch resumes where it left off.
+    """
+    from datetime import date, datetime
+    from pathlib import Path
+
+    from tradingagents.disclosures.pipeline import latest_pick_dir
+    from tradingagents.disclosures.render import render_summary_html
+    from tradingagents.disclosures.review import (
+        STATUS_OK,
+        ReviewOptions,
+        load_candidates,
+        review_candidates,
+    )
+
+    pick_dir = Path(pick) if pick else latest_pick_dir(".")
+    if pick_dir is None or not (Path(pick_dir) / "seeds.json").exists():
+        typer.echo(
+            "No pick found. Run 'tradingagents pull-stocks' first, or pass "
+            "--pick <directory>.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    pick_dir = Path(pick_dir)
+
+    config = DEFAULT_CONFIG.copy()
+    if provider:
+        config["llm_provider"] = provider
+    if deep_model:
+        config["deep_think_llm"] = deep_model
+    if quick_model:
+        config["quick_think_llm"] = quick_model
+
+    options = ReviewOptions(
+        max_symbols=max_symbols,
+        concurrency=concurrency,
+        skip_days=skip_days,
+        force=force,
+        retry_failed=retry_failed,
+        asset_classes=tuple(c.strip().upper() for c in asset_classes.split(",") if c.strip()),
+        trade_date=(
+            datetime.strptime(analysis_date, "%Y-%m-%d").date()
+            if analysis_date
+            else date.today()
+        ),
+    )
+
+    console.print(f"\n  Pick    [bold]{pick_dir}[/bold]")
+    console.print(
+        f"  Model   [bold]{config['llm_provider']}[/bold] · "
+        f"{config['deep_think_llm']} / {config['quick_think_llm']}\n"
+    )
+
+    def progress(event, ticker, entry):
+        if event == "start":
+            console.print(f"  [dim]>[/dim] {ticker} ...")
+        elif entry.get("status") == STATUS_OK:
+            console.print(
+                f"  [green]OK[/green] {ticker} -> [bold]{entry['decision']}[/bold] "
+                f"[dim]({entry['duration_s']}s)[/dim]"
+            )
+        else:
+            console.print(f"  [red]FAIL[/red] {ticker} [dim]{entry.get('error', '')}[/dim]")
+
+    state = review_candidates(
+        pick_dir, config, options, reports_root=Path("reports"), progress=progress
+    )
+
+    _, candidates = load_candidates(pick_dir)
+    summary_path = pick_dir / "summary.html"
+    summary_path.write_text(
+        render_summary_html(state, candidates, pick_dir), encoding="utf-8"
+    )
+
+    results = state.data["results"]
+    analyzed = [e for e in results.values() if e.get("status") == STATUS_OK]
+    console.print()
+    console.print(f"  Analyzed  [bold]{len(analyzed)}[/bold]")
+    console.print(f"  Failed    [bold]{sum(1 for e in results.values() if e.get('status') == 'failed')}[/bold]")
+    console.print(f"  Skipped   [bold]{sum(1 for e in results.values() if e.get('status') == 'skipped')}[/bold]")
+    console.print()
+    console.print(f"  [green]{summary_path}[/green]")
+
+
 if __name__ == "__main__":
     app()
