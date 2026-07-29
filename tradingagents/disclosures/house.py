@@ -46,7 +46,9 @@ class HouseDisclosureSource:
     name = "us-house"
 
     def __init__(self, cache_dir: str | Path | None = None, session=None):
-        self.cache_dir = Path(cache_dir) if cache_dir else None
+        # expanduser so a configured "~/.tradingagents/cache" caches where the
+        # user meant, rather than in a literal "~" directory beside the cwd.
+        self.cache_dir = Path(cache_dir).expanduser() if cache_dir else None
         self.session = session or requests.Session()
         self.session.headers.setdefault("User-Agent", USER_AGENT)
 

@@ -127,6 +127,7 @@ newly added subcommand. `-e` links it to your working tree instead.
 Alternatively, run with Docker:
 ```bash
 cp .env.example .env  # add your API keys
+mkdir -p picks reports # bind-mounted, so output survives the container
 docker compose run --rm tradingagents
 ```
 
@@ -134,6 +135,15 @@ For local models with Ollama:
 ```bash
 docker compose --profile ollama run --rm tradingagents-ollama
 ```
+
+The image's entrypoint is the CLI, so any subcommand can be appended:
+```bash
+docker compose run --rm tradingagents pull-stocks --days 45
+docker compose run --rm tradingagents stocks-review --max-symbols 5
+```
+`picks/` and `reports/` are bind-mounted because both commands write to the
+working directory rather than to `~/.tradingagents`. Create them before the
+first run so they are owned by you rather than by root.
 
 ### Required APIs
 
@@ -328,6 +338,35 @@ print(decision)
 ```
 
 See `tradingagents/default_config.py` for all configuration options.
+
+### Disclosure pipeline in Python
+
+The machinery behind `pull-stocks` is importable, so you can build a candidate
+list without the CLI — useful for scheduling a pull or feeding the tickers
+somewhere other than `stocks-review`:
+
+```python
+from datetime import date
+
+from tradingagents.disclosures import (
+    HouseDisclosureSource, PullOptions, pull_stocks, write_pull,
+)
+
+result = pull_stocks(
+    HouseDisclosureSource(cache_dir="~/.tradingagents/cache"),
+    llm=None,                                   # None skips thesis generation
+    options=PullOptions(days=45, peers=3, as_of=date.today()),
+)
+
+for candidate in result.candidates[:10]:
+    print(candidate.rank, candidate.ticker, candidate.origin, candidate.members)
+
+write_pull(result, root=".")                    # writes ./picks/<timestamp>/
+```
+
+`DisclosureSource` is a protocol, so another jurisdiction is a new class rather
+than a change to the pipeline — it needs a `name` and a
+`fetch(start, end) -> DisclosureBatch`. Only the US House ships today.
 
 ## Persistence and Recovery
 

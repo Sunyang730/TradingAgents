@@ -367,6 +367,23 @@ class TestSerialisation:
 
 
 @pytest.mark.unit
+class TestHouseSource:
+    def test_cache_dir_expands_user(self):
+        # A configured "~/.tradingagents/cache" must cache where the user meant,
+        # not in a literal "~" directory beside the working directory.
+        from tradingagents.disclosures import HouseDisclosureSource
+
+        source = HouseDisclosureSource(cache_dir="~/.tradingagents/cache")
+        assert "~" not in str(source.cache_dir)
+        assert source.cache_dir.is_absolute()
+
+    def test_cache_is_optional(self):
+        from tradingagents.disclosures import HouseDisclosureSource
+
+        assert HouseDisclosureSource().cache_dir is None
+
+
+@pytest.mark.unit
 class TestRendering:
     def test_page_is_self_contained(self):
         html = render_selection_html(_result(_group_into_seeds([_txn()])))
